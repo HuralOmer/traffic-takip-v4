@@ -16,12 +16,12 @@ Write-Host ""
 # 1. Git durumunu kontrol et
 Write-Host "[1/4] Git durumu kontrol ediliyor..." -ForegroundColor Yellow
 $gitStatus = git status --porcelain
-if ($gitStatus) {
-    Write-Host "   ⚠️  Uncommitted değişiklikler var!" -ForegroundColor Red
-    Write-Host "   📝 Değişiklikler:" -ForegroundColor Yellow
+if ($gitStatus -ne $null -and $gitStatus -ne "") {
+    Write-Host "   WARNING: Uncommitted degisiklikler var!" -ForegroundColor Red
+    Write-Host "   Degisiklikler:" -ForegroundColor Yellow
     git status --short
 } else {
-    Write-Host "   ✅ Working tree temiz" -ForegroundColor Green
+    Write-Host "   OK: Working tree temiz" -ForegroundColor Green
 }
 
 # 2. Stash olarak kaydet
@@ -29,9 +29,9 @@ Write-Host ""
 Write-Host "[2/4] Stash olarak kaydediliyor..." -ForegroundColor Yellow
 git stash push -m "$Description"
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "   ✅ Kayıt tamamlandı" -ForegroundColor Green
+    Write-Host "   OK: Kayit tamamlandi" -ForegroundColor Green
 } else {
-    Write-Host "   ⚠️  Stash oluşturulamadı (zaten boş olabilir)" -ForegroundColor Yellow
+    Write-Host "   WARNING: Stash olusturulamadi (zaten bos olabilir)" -ForegroundColor Yellow
 }
 
 # 3. Stash listesini göster
@@ -48,7 +48,7 @@ Write-Host "Branch: $(git branch --show-current)" -ForegroundColor Cyan
 Write-Host ""
 
 Write-Host "===================================" -ForegroundColor Green
-Write-Host "✅ Backup Tamamlandı!" -ForegroundColor Green
+Write-Host "OK: Backup Tamamlandi!" -ForegroundColor Green
 Write-Host "===================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "GERİ ALMAK İÇİN:" -ForegroundColor Yellow

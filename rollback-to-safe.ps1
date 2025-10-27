@@ -8,7 +8,7 @@ param(
 )
 
 Write-Host "===================================" -ForegroundColor Red
-Write-Host "⚠️  GÜVENLİ DURUMA GERİ DÖNÜLÜYOR" -ForegroundColor Red
+Write-Host "WARNING: GUVENLI DURUMA GERI DONULUYOR" -ForegroundColor Red
 Write-Host "===================================" -ForegroundColor Red
 Write-Host ""
 
@@ -53,7 +53,7 @@ git reset --hard origin/main
 
 Write-Host ""
 Write-Host "===================================" -ForegroundColor Green
-Write-Host "✅ Güvenli duruma geri dönüldü!" -ForegroundColor Green
+Write-Host "OK: Guvenli duruma geri donuldu!" -ForegroundColor Green
 Write-Host "===================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Branch: $(git branch --show-current)" -ForegroundColor Cyan
