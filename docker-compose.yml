@@ -1,0 +1,139 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: universal-tracking-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: universal-tracking-postgres
+    environment:
+      POSTGRES_DB: universal_tracking
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: universal-tracking-clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_PASSWORD: clickhouse123
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse-config/users.d:/etc/clickhouse-server/users.d
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  universal-tracking:
+    build:
+      context: .
+      dockerfile: services/universal-tracking/Dockerfile
+    container_name: universal-tracking-service
+    ports:
+      - "3001:3001"
+      # WebSocket now runs on same port (3001) with path /ws/active-users
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - HOST=0.0.0.0
+      - SITE_SALT=your-site-salt-must-be-at-least-32-characters-long
+      - JWT_SECRET=your-jwt-secret-must-be-at-least-32-characters-long
+      - HMAC_SECRET=your-hmac-secret-must-be-at-least-32-characters-long
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PG_DATABASE=universal_tracking
+      - PGUSER=postgres
+      - PGPASSWORD=test123
+      - PG_SSL=false
+      - REDIS_URL=redis://redis:6379
+      - REDISHOST=redis
+      - REDISPORT=6379
+      - REDIS_DB=0
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_DATABASE=analytics
+      - CLICKHOUSE_USERNAME=default
+      - CLICKHOUSE_PASSWORD=clickhouse123
+      - CLICKHOUSE_SSL=false
+      # ✅ Smart URL Detection will automatically detect correct URLs
+      # - PUBLIC_API_URL=https://api.lorventurkiye.com  # Smart detection handles this
+      # - PUBLIC_WS_URL=wss://api.lorventurkiye.com     # Smart detection handles this
+    depends_on:
+      - redis
+      - postgres
+      - clickhouse
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); http.get('http://0.0.0.0:3001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dashboard/Dockerfile
+    container_name: universal-tracking-dashboard
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+      - PORT=3002
+    depends_on:
+      - universal-tracking
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflare-tunnel
+    command: tunnel --no-autoupdate run --token eyJhIjoiMjhlZDI4YTBmNDg5YjcwMzU0MWE1ODhjNWE0NjNiNWEiLCJ0IjoiNTcyOWVhZmEtMTgyOS00NmYzLWEwMWEtNDhlMWYyODA2OWVmIiwicyI6IlpEQTFOMkpqT1dZdFptSmhOaTAwT1dFd0xUaGxabUl0TkRnMk1ESTRZbUprTmpJMCJ9
+    environment:
+      - TUNNEL_TOKEN=eyJhIjoiMjhlZDI4YTBmNDg5YjcwMzU0MWE1ODhjNWE0NjNiNWEiLCJ0IjoiNTcyOWVhZmEtMTgyOS00NmYzLWEwMWEtNDhlMWYyODA2OWVmIiwicyI6IlpEQTFOMkpqT1dZdFptSmhOaTAwT1dFd0xUaGxabUl0TkRnMk1ESTRZbUprTmpJMCJ9
+    depends_on:
+      - universal-tracking
+      - dashboard
+    restart: unless-stopped
+    networks:
+      - default
+
+volumes:
+  redis_data:
+  postgres_data:
+  clickhouse_data:
+
+

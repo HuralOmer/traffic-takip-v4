@@ -1,0 +1,37 @@
+{
+  "name": "universal-tracking-system",
+  "version": "1.0.0",
+  "description": "Universal tracking system for e-commerce websites",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "pnpm run --parallel dev",
+    "build": "pnpm -r --workspace-concurrency=1 build",
+    "build:packages": "pnpm --filter \"@universal-tracking/types\" --filter \"@universal-tracking/schemas\" build",
+    "build:services": "pnpm --filter \"@universal-tracking/service\" build",
+    "build:apps": "pnpm --filter \"@universal-tracking/dashboard\" build",
+    "build:sequential": "pnpm run build:packages && pnpm run build:services && pnpm run build:apps",
+    "test": "pnpm run --recursive test",
+    "lint": "pnpm run --recursive lint",
+    "type-check": "pnpm run --recursive type-check",
+    "clean": "pnpm run --recursive clean"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "dependencies": {
+    "ioredis": "^5.3.2"
+  }
+}

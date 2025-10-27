@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hibrit Tracking Sistemi - Test Sayfası</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .section {
+            margin: 30px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        .button {
+            background: #007cba;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover {
+            background: #005a87;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🚀 Hibrit Tracking Sistemi - Test Sayfası</h1>
+    
+    <div class="section">
+        <h2>📊 Sistem Durumu</h2>
+        <div id="status" class="status">Sistem başlatılıyor...</div>
+        <button class="button" onclick="checkStatus()">Durumu Kontrol Et</button>
+        <button class="button" onclick="syncOfflineData()">Offline Verileri Senkronize Et</button>
+    </div>
+
+    <div class="section">
+        <h2>🎯 Event Tracking Testleri</h2>
+        
+        <h3>Standart Events:</h3>
+        <button class="button" onclick="trackPageView()">Sayfa Görüntüleme</button>
+        <button class="button" onclick="trackCustomEvent()">Custom Event</button>
+        <button class="button" onclick="trackButtonClick()">Button Tıklama</button>
+        <button class="button" onclick="trackScroll()">Scroll Tracking</button>
+        
+        <h3>E-ticaret Events:</h3>
+        <button class="button" onclick="trackProductView()">Ürün Görüntüleme</button>
+        <button class="button" onclick="trackAddToCart()">Sepete Ekleme</button>
+        <button class="button" onclick="trackPurchase()">Satın Alma</button>
+        
+        <h3>Form Events:</h3>
+        <form id="testForm" onsubmit="trackFormSubmit(event)">
+            <div class="form-group">
+                <label for="name">Ad:</label>
+                <input type="text" id="name" name="name" required>
+            </div>
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            <button type="submit" class="button">Form Gönder</button>
+        </form>
+    </div>
+
+    <div class="section">
+        <h2>🔧 Konfigürasyon</h2>
+        <div class="form-group">
+            <label for="customerId">Müşteri ID:</label>
+            <input type="text" id="customerId" value="test-musteri-123">
+        </div>
+        <div class="form-group">
+            <label for="domain">Domain:</label>
+            <input type="text" id="domain" value="test-musteri.com">
+        </div>
+        <div class="form-group">
+            <label for="debugMode">Debug Modu:</label>
+            <select id="debugMode">
+                <option value="true">Açık</option>
+                <option value="false">Kapalı</option>
+            </select>
+        </div>
+        <button class="button" onclick="reinitializeTracking()">Sistemi Yeniden Başlat</button>
+    </div>
+
+    <div class="section">
+        <h2>📝 Log Kayıtları</h2>
+        <div id="logContainer" class="log"></div>
+        <button class="button" onclick="clearLog()">Logları Temizle</button>
+    </div>
+
+    <div class="section">
+        <h2>🔗 Link Testleri</h2>
+        <p>Bu linkler otomatik olarak takip edilir:</p>
+        <a href="#section1" onclick="return false;">İç Link 1</a> |
+        <a href="#section2" onclick="return false;">İç Link 2</a> |
+        <a href="https://example.com" target="_blank">Dış Link</a>
+    </div>
+
+    <!-- Universal Tracking Script -->
+    <script>
+        // Test için global değişkenler
+        let tracking = null;
+        let logContainer = null;
+
+        // Sayfa yüklendiğinde
+        document.addEventListener('DOMContentLoaded', function() {
+            logContainer = document.getElementById('logContainer');
+            initializeTracking();
+        });
+
+        // Log fonksiyonu
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}`;
+            
+            if (logContainer) {
+                logContainer.innerHTML += logEntry + '\n';
+                logContainer.scrollTop = logContainer.scrollHeight;
+            }
+            
+            console.log(logEntry);
+        }
+
+        // Tracking başlat
+        async function initializeTracking() {
+            try {
+                log('🚀 Universal Tracking başlatılıyor...');
+                
+                // Konfigürasyon
+                const config = {
+                    customerId: document.getElementById('customerId').value,
+                    domain: document.getElementById('domain').value,
+                    debug: document.getElementById('debugMode').value === 'true'
+                };
+
+                // Universal Tracking sınıfını yükle (gerçek implementasyon)
+                // Bu örnekte basit bir mock kullanıyoruz
+                tracking = {
+                    init: async function() {
+                        log('✅ Universal Tracking başlatıldı');
+                        updateStatus('success', 'Sistem aktif - Hibrit mod');
+                    },
+                    trackEvent: function(eventData) {
+                        log(`📊 Event tracked: ${eventData.event_type}`, 'info');
+                    },
+                    trackPageView: function() {
+                        log('📄 Page view tracked');
+                    },
+                    trackEcommerceEvent: function(eventType, data) {
+                        log(`🛒 E-commerce event: ${eventType}`, 'info');
+                    },
+                    trackFormSubmit: function(formName) {
+                        log(`📝 Form submit: ${formName}`, 'info');
+                    },
+                    getStatus: function() {
+                        return {
+                            initialized: true,
+                            trackingMethod: 'hybrid',
+                            customerId: config.customerId,
+                            domain: config.domain
+                        };
+                    },
+                    syncOfflineData: function() {
+                        log('🔄 Offline data sync completed');
+                    }
+                };
+
+                await tracking.init();
+                
+            } catch (error) {
+                log(`❌ Hata: ${error.message}`, 'error');
+                updateStatus('error', 'Sistem başlatılamadı');
+            }
+        }
+
+        // Durum güncelle
+        function updateStatus(type, message) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+        }
+
+        // Test fonksiyonları
+        function checkStatus() {
+            if (tracking) {
+                const status = tracking.getStatus();
+                log(`📊 Sistem durumu: ${JSON.stringify(status, null, 2)}`);
+                updateStatus('success', `Tracking Method: ${status.trackingMethod}`);
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+                updateStatus('error', 'Sistem başlatılmamış');
+            }
+        }
+
+        function trackPageView() {
+            if (tracking) {
+                tracking.trackPageView();
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function trackCustomEvent() {
+            if (tracking) {
+                tracking.trackEvent({
+                    event_type: 'custom_test',
+                    metadata: { test: true, timestamp: Date.now() }
+                });
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function trackButtonClick() {
+            if (tracking) {
+                tracking.trackEvent({
+                    event_type: 'button_click',
+                    metadata: { button_id: 'test_button', button_text: 'Test Button' }
+                });
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function trackScroll() {
+            if (tracking) {
+                tracking.trackEvent({
+                    event_type: 'scroll',
+                    metadata: { scroll_depth: window.pageYOffset + window.innerHeight }
+                });
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function trackProductView() {
+            if (tracking) {
+                tracking.trackEcommerceEvent('product_view', {
+                    product_id: 'test-product-123',
+                    product_name: 'Test Ürünü',
+                    price: 99.99
+                });
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function trackAddToCart() {
+            if (tracking) {
+                tracking.trackEcommerceEvent('add_to_cart', {
+                    product_id: 'test-product-123',
+                    product_name: 'Test Ürünü',
+                    price: 99.99,
+                    quantity: 1
+                });
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function trackPurchase() {
+            if (tracking) {
+                tracking.trackEcommerceEvent('purchase', {
+                    order_id: 'order-123',
+                    total: 199.98,
+                    items: [
+                        { product_id: 'test-product-123', quantity: 2, price: 99.99 }
+                    ]
+                });
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function trackFormSubmit(event) {
+            event.preventDefault();
+            if (tracking) {
+                tracking.trackFormSubmit('test_form');
+                log('📝 Form gönderildi');
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function syncOfflineData() {
+            if (tracking) {
+                tracking.syncOfflineData();
+            } else {
+                log('❌ Tracking sistemi başlatılmamış');
+            }
+        }
+
+        function reinitializeTracking() {
+            log('🔄 Sistem yeniden başlatılıyor...');
+            initializeTracking();
+        }
+
+        function clearLog() {
+            if (logContainer) {
+                logContainer.innerHTML = '';
+            }
+        }
+
+        // Scroll tracking
+        let maxScroll = 0;
+        window.addEventListener('scroll', function() {
+            const scrollDepth = window.pageYOffset + window.innerHeight;
+            if (scrollDepth > maxScroll) {
+                maxScroll = scrollDepth;
+                if (tracking) {
+                    tracking.trackEvent({
+                        event_type: 'scroll',
+                        metadata: { scroll_depth: scrollDepth }
+                    });
+                }
+            }
+        });
+
+        // Auto-tracking için event listener'lar
+        document.addEventListener('click', function(event) {
+            const target = event.target;
+            
+            // Link tracking
+            if (target.tagName === 'A') {
+                if (tracking) {
+                    tracking.trackEvent({
+                        event_type: 'link_click',
+                        metadata: { link_url: target.href, link_text: target.textContent }
+                    });
+                }
+            }
+            
+            // Button tracking
+            if (target.tagName === 'BUTTON') {
+                if (tracking) {
+                    tracking.trackEvent({
+                        event_type: 'button_click',
+                        metadata: { button_id: target.id, button_text: target.textContent }
+                    });
+                }
+            }
+        });
+    </script>
+</body>
+</html>
