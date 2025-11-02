@@ -278,6 +278,33 @@ export async function detectDevice(
     allReasons.push('🔧 AUTO-CORRECTED: Macintosh + Android impossible, forced to iOS');
     spoofingDetected = true;
   }
+  // ✅ ADDITIONAL TABLET HEURISTICS (Client Hints + Screen Size + UA keywords)
+  const screenWidth = screen?.width ?? 0;
+  const screenHeight = screen?.height ?? 0;
+  const maxScreenDimension = Math.max(screenWidth, screenHeight);
+  const modelHint = typeof clientHints?.model === 'string' ? clientHints.model.toLowerCase() : '';
+  const uaLower = userAgent.toLowerCase();
+
+  const modelSuggestsTablet = modelHint.includes('ipad') || modelHint.includes('tab');
+  const uaMentionsTablet = uaLower.includes('ipad') || uaLower.includes('tablet');
+  const screenSuggestsTablet = maxScreenDimension >= Math.max(tabletMinWidth, 720);
+
+  const shouldPromoteToTablet = (modelSuggestsTablet || uaMentionsTablet || screenSuggestsTablet) && realDeviceType.includes('mobile');
+
+  if (shouldPromoteToTablet) {
+    if (realDeviceType.includes('ios')) {
+      realDeviceType = 'ios_tablet';
+    } else if (realDeviceType.includes('android')) {
+      realDeviceType = 'android_tablet';
+    } else if (hasAppleVendor || hasMacintosh || isSafari) {
+      realDeviceType = 'ios_tablet';
+    } else {
+      realDeviceType = 'android_tablet';
+    }
+    confidence = confidence === 'low' ? 'medium' : confidence;
+    allReasons.push('🔍 Tablet heuristics triggered: model/UA/screen size indicates tablet');
+  }
+
   // Parse reported info from User-Agent
   const reportedPlatform = ua.hasAndroid ? 'android' :
                           ua.hasIOS ? 'ios' :
