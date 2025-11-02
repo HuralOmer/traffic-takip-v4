@@ -19,6 +19,10 @@ export class PresenceService {
     this.startStaleSessionCleanup();
   }
 
+  private log(message: string): void {
+    console.log(`[${new Date().toISOString()}] ${message}`);
+  }
+
   /**
    * Get Redis client for direct access
    */
@@ -42,7 +46,8 @@ export class PresenceService {
       clearTimeout(existingTimer);
       this.disconnectTimers.delete(sessionKey);
       if (!silent) {
-              }
+        this.log(`[Presence] ⏹️ Disconnect timer cancelled | Session: ${sessionId.substring(0, 8)}`);
+      }
       return true; // Timer iptal edildi
     }
     return false; // Timer yoktu
@@ -101,8 +106,8 @@ export class PresenceService {
     // Get platform-specific configuration
     const config = PlatformDetector.getConfig(platform, sessionMode);
     
-    // Cancel any pending disconnect timer (DEPRECATED - will be removed)
-    this.cancelDisconnectTimer(payload.customerId, payload.sessionId);
+    const timerCancelled = this.cancelDisconnectTimer(payload.customerId, payload.sessionId);
+    this.log(`[Presence] 🔔 JOIN received → cancelDisconnectTimer=${timerCancelled} | Session: ${payload.sessionId.substring(0, 8)}`);
     
     // ✅ CRITICAL FIX: If some fields are missing (e.g., from TTL refresh in polling mode),
     // preserve existing values from Redis
@@ -207,7 +212,7 @@ export class PresenceService {
     }
     
     const modeInfo = payload.mode === 'final' ? 'FINAL' : 'PENDING';
-    console.log(`[Presence] ❌ LEAVE | ${payload.sessionId.substring(0, 8)} | ${leaveTime} | Mode: ${modeInfo} | Reason: ${payload.reason}`);
+    this.log(`[Presence] ❌ LEAVE | ${payload.sessionId.substring(0, 8)} | ${leaveTime} | Mode: ${modeInfo} | Reason: ${payload.reason}`);
     
     
     // ✅ CRITICAL FIX: Handle PENDING vs FINAL differently
@@ -228,7 +233,7 @@ export class PresenceService {
           if (exists) {
             // PENDING expired without JOIN → safe to remove (LOG REMOVAL)
             const sessionId = payload.sessionId.substring(0, 8);
-            console.log(`[Presence] ❌ SESSION REMOVED (grace expired) | ${sessionId} | Reason: ${payload.reason}`);
+            this.log(`[Presence] ❌ SESSION REMOVED (grace expired) | ${sessionId} | Reason: ${payload.reason}`);
             
             // Delete PENDING key
             await redisClient.del(pendingKey);
@@ -269,7 +274,7 @@ export class PresenceService {
       const redisClient = this.redis.getRedisClient();
       await redisClient.del(pendingKey);
       
-      console.log(`[Presence] ✅ Session removed from Redis successfully (FINAL)`);
+      this.log(`[Presence] ✅ Session removed from Redis successfully (FINAL)`);
       
       return true;
     }
@@ -362,7 +367,7 @@ export class PresenceService {
           // Parse updatedAt timestamp (ISO 8601 format: "2025-01-17T15:30:45.123Z")
           const updatedAt = new Date(presenceData.updatedAt).getTime();
           if (isNaN(updatedAt)) {
-            console.warn(`[Presence] ⚠️ Invalid timestamp for ${sessionId}: ${presenceData.updatedAt}`);
+            this.log(`[Presence] ⚠️ Invalid timestamp for ${sessionId}: ${presenceData.updatedAt}`);
             continue;
           }
           const timeSinceUpdate = now - updatedAt;

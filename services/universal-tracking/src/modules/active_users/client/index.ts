@@ -196,9 +196,6 @@ export class ActiveUsersClient {
     this.isMobileOrTabletDevice = detectedDevice === 'mobile' || detectedDevice === 'tablet' || 
                                    detectedPlatform === 'android' || detectedPlatform === 'ios';
     
-    // ✅ CRITICAL: Set mobile/tablet flag in UnloadHandler (for reload handling)
-    this.unload.setIsMobileOrTablet(this.isMobileOrTabletDevice);
-    
     // ✅ CRITICAL: Initialize Passive Active Manager AFTER device detection (Desktop ONLY)
     if (!this.isMobileOrTabletDevice) {
       // Desktop: Enable PassiveActive
@@ -260,23 +257,29 @@ export class ActiveUsersClient {
       
       // ✅ MOBILE/TABLET FIX: Ekran kilidi açıldığında Redis'e yeniden JOIN gönder
       if (this.isMobileOrTabletDevice) {
-        // ✅ CRITICAL: Reset flags FIRST (before sendJoin)
-        // This ensures sendJoin() won't be blocked by mobileLeaveSent flag
+        const wasConnected = this.connection.isConnected();
+        const previousMobileLeaveSent = this.mobileLeaveSent;
+        const previousIntentionalFlag = (this.connection as any).isIntentionallyStopped;
+
+        // Geçici olarak bayrakları sıfırla, JOIN'e izin ver; başarısız olursa geri alacağız
         this.mobileLeaveSent = false;
         (this.connection as any).resetIntentionallyStopped?.();
-        
-        // ✅ Connection durumunu kontrol et
-        const isConnected = this.connection.isConnected();
-        
-        // ✅ JOIN gönder
-        await this.sendJoin();
-        
+
+        let joinSucceeded = false;
+        try {
+          await this.sendJoin();
+          joinSucceeded = true;
+        } catch (error) {
+          // JOIN başarısızsa bayrakları eski haline getir
+          this.mobileLeaveSent = previousMobileLeaveSent;
+          if (previousIntentionalFlag !== undefined) {
+            (this.connection as any).isIntentionallyStopped = previousIntentionalFlag;
+          }
+          throw error;
+        }
+
         // ✅ Connection'ı restart et (stop edilmişse)
-        if (!isConnected) {
-          // ✅ CRITICAL: Reset intentionally stopped flag before restarting
-          // This allows JOIN to be sent when reconnecting
-          (this.connection as any).resetIntentionallyStopped?.();
-          
+        if (!wasConnected) {
           this.connection.start(
             'foreground',
             (metrics) => this.handleMetricsUpdate(metrics),
@@ -289,10 +292,16 @@ export class ActiveUsersClient {
             () => this.handleWebSocketFallback()
           );
         }
-        
+
         // ✅ Leader election trigger et
         if (this.store.isTabLeader()) {
           this.startTTLRefresh();
+        }
+
+        if (joinSucceeded) {
+          // JOIN başarıyla gönderildiyse bayraklar sıfırlanmış olarak kalsın
+          this.mobileLeaveSent = false;
+          (this.connection as any).resetIntentionallyStopped?.();
         }
         
       }
@@ -408,15 +417,6 @@ export class ActiveUsersClient {
       // ✅ MOBILE/TABLET: Immediate LEAVE on background (no passive_active mode)
       if (this.isMobileOrTabletDevice) {
         if (currentState === 'background') {
-          // ✅ Reload detection: If unload handler reports reload in progress, skip LEAVE
-          if (this.unload.isReloadingInProgress?.()) {
-            this.logger.log('📱 Mobile/Tablet background → Reload detected → Skipping LEAVE');
-            this.mobileLeaveSent = false;
-            (this.connection as any).resetIntentionallyStopped?.();
-            this.unload.resetLeaveSentFlag?.();
-            return;
-          }
-
           // ✅ Mobile/Tablet: Background'a geçildiğinde hemen LEAVE gönder
           this.logger.log('📱 Mobile/Tablet background → Sending LEAVE immediately');
           // ✅ CRITICAL: Flag already set above (before debounce), but ensure it's set here too

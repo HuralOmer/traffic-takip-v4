@@ -5,7 +5,7 @@
 import type { WebSocketServer as WSServer } from 'ws';
 import { BroadcastService } from '../services/broadcast.service.js';
 import { PresenceService } from '../services/presence.service.js';
-import { getCurrentTimestamp } from '../utils/timestamp.js';
+import { getCurrentTimestamp, parseTimestamp } from '../utils/timestamp.js';
 import type { ClientMessage, ServerMessage } from '../../types/Messages.js';
 interface ClientInfo {
   customerId: string;
@@ -79,7 +79,8 @@ export class WebSocketServer {
               this.clientInfoMap.set(ws, clientInfo);
               // 🆕 CRITICAL: Cancel any pending disconnect timer for this session
               // Kullanıcı tab switcher'dan geri döndü!
-              this.presence.cancelDisconnectTimer(message.customerId, message.sessionId);
+              const timerCancelledViaAuth = this.presence.cancelDisconnectTimer(message.customerId, message.sessionId);
+              this.logWithTimestamp(`[WebSocket] 🔔 Auth JOIN → cancelDisconnectTimer=${timerCancelledViaAuth} | Session: ${message.sessionId?.substring(0, 8)}`);
               // 🆕 Track active connection
               if (!this.activeCustomers.has(customerId)) {
                 this.activeCustomers.set(customerId, new Set());
@@ -186,7 +187,7 @@ export class WebSocketServer {
       const keyTTL = await this.presence.getKeyTTL(customerId, sessionId);
       if (keyTTL === -2) {
         // Key zaten silinmiş (LEAVE önce gelmiş) → Timer başlatmaya gerek yok
-        console.log(`[WebSocket] ⏭️ Key already deleted (LEAVE handled) - skipping timer for ${sessionId.substring(0, 8)}`);
+        this.logWithTimestamp(`[WebSocket] ⏭️ Key already deleted (LEAVE handled) - skipping timer for ${sessionId.substring(0, 8)}`);
         return;
       }
       
@@ -195,26 +196,34 @@ export class WebSocketServer {
           // 🆕 CRITICAL FIRST: Remove timer from map IMMEDIATELY (silent mode)
           this.presence.cancelDisconnectTimer(customerId, sessionId, true);
           
-          // 🆕 SIMPLE & RELIABLE: Redis'ten key TTL'ini kontrol et
-          // Eğer kullanıcı geri döndüyse, JOIN request gelmiş ve TTL güncellenmiştir
-          const keyTTL = await this.presence.getKeyTTL(customerId, sessionId);
-          
-          if (keyTTL === -2) {
-            // Key yok, zaten silinmiş
-            console.log(`[WebSocket] ⏭️ Key already deleted for ${sessionId.substring(0, 8)}`);
+          // 🆕 NEW LOGIC: Check last activity timestamp for deterministic decision
+          const presenceData = await this.presence.getPresence(customerId, sessionId);
+          if (!presenceData) {
+            this.logWithTimestamp(`[WebSocket] 🗑️ No presence data found (likely removed) - removing session ${sessionId.substring(0, 8)}`);
+            await this.presence.removePresence(customerId, sessionId);
             return;
           }
-          
-          // TTL kontrolü: Eğer TTL yüksekse (örn. > 10s), JOIN gelmiş demektir
-          const threshold = device === 'desktop' ? 10 : 15; // Desktop için daha kısa threshold
-          if (keyTTL > threshold) {
-            // TTL yüksek = Kullanıcı aktif (yakın zamanda JOIN geldi)
-            console.log(`[WebSocket] ✅ JOIN received (TTL: ${keyTTL}s) - keeping session ${sessionId.substring(0, 8)}`);
+
+          let lastActivityMs = 0;
+          try {
+            lastActivityMs = parseTimestamp(presenceData.updatedAt);
+          } catch (error) {
+            this.logWithTimestamp(`[WebSocket] ⚠️ Invalid updatedAt for ${sessionId.substring(0, 8)}: ${presenceData.updatedAt} - removing session`);
+            await this.presence.removePresence(customerId, sessionId);
             return;
           }
-          
-          // TTL düşük veya yok = JOIN gelmemiş, kullanıcı gerçekten çıkmış
-          console.log(`[WebSocket] 🗑️ No JOIN received within ${timeoutMs}ms - removing session ${sessionId.substring(0, 8)}`);
+
+          const elapsedMs = Date.now() - lastActivityMs;
+          const safetyMarginMs = 5000; // 5s güvenlik payı
+          const thresholdMs = timeoutMs + safetyMarginMs;
+          if (elapsedMs <= thresholdMs) {
+            const elapsedSec = Math.round(elapsedMs / 1000);
+            this.logWithTimestamp(`[WebSocket] ✅ Recent activity detected (${elapsedSec}s <= ${Math.round(thresholdMs / 1000)}s) - keeping session ${sessionId.substring(0, 8)}`);
+            return;
+          }
+
+          const elapsedSec = Math.round(elapsedMs / 1000);
+          this.logWithTimestamp(`[WebSocket] 🗑️ No activity for ${elapsedSec}s (> ${Math.round(thresholdMs / 1000)}s) - removing session ${sessionId.substring(0, 8)}`);
           await this.presence.removePresence(customerId, sessionId);
         } catch (error) {
           console.error(`[WebSocket] Error during delayed disconnect cleanup for ${sessionId}:`, error);
@@ -224,7 +233,7 @@ export class WebSocketServer {
       // 🆕 Store timer in PresenceService (shared between WebSocket and REST endpoints)
       // Eğer JOIN gelirse, bu timer iptal edilecek
       this.presence.setDisconnectTimer(customerId, sessionId, timer);
-      console.log(`[WebSocket] ⏳ Started disconnect timer (${timeoutMs}ms) for ${sessionId.substring(0, 8)} | Device: ${device || 'unknown'}`);
+      this.logWithTimestamp(`[WebSocket] ⏳ Started disconnect timer (${timeoutMs}ms) for ${sessionId.substring(0, 8)} | Device: ${device || 'unknown'}`);
     } catch (error) {
       console.error(`[WebSocket] Error during disconnect cleanup for ${sessionId}:`, error);
     }
@@ -234,5 +243,13 @@ export class WebSocketServer {
    */
   close(): void {
     this.wss.close();
+  }
+
+  /**
+   * Log helper with ISO timestamp
+   */
+  private logWithTimestamp(message: string): void {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] ${message}`);
   }
 }
