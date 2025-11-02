@@ -15,12 +15,12 @@ export type VisibilityState = 'foreground' | 'background';
 export class VisibilityTracker {
   private currentState: VisibilityState = 'foreground';
   private onStateChange: ((state: VisibilityState) => void) | null = null;
-  private visibilityTimeout: NodeJS.Timeout | null = null;
-  private focusTimeout: NodeJS.Timeout | null = null;
+  private visibilityTimeout: ReturnType<typeof setTimeout> | null = null;
+  private focusTimeout: ReturnType<typeof setTimeout> | null = null;
   private lastVisibilityChange = 0;
   // DevTools detection
   private devToolsOpen = false;
-  private devToolsCheckInterval: NodeJS.Timeout | null = null;
+  private devToolsCheckInterval: ReturnType<typeof setInterval> | null = null;
   // 🆕 Background → Foreground transition callback
   private onBecameForeground: (() => void | Promise<void>) | null = null;
   start(onStateChange: (state: VisibilityState) => void): void {
@@ -48,22 +48,29 @@ export class VisibilityTracker {
       // If tab is visible, we'll switch to foreground
       this.checkAndUpdateState();
     });
-    // ✅ Window blur event - user switched to another app OR DevTools got focus
+    // ✅ Window blur event - user switched to another app OR DevTools got focus OR address bar click
     window.addEventListener('blur', () => {
             // Clear any existing timeout
       if (this.focusTimeout) {
         clearTimeout(this.focusTimeout);
       }
-      // ✅ FIX: Kısa bir gecikme ile kontrol et
-      // Eğer document.hidden = true ise, zaten visibilitychange tetiklenecek
-      // Bu blur event sadece "aynı browser içinde başka yere focus" için
+      // ✅ CRITICAL FIX: Adres çubuğu veya DevTools'a tıklayınca blur tetiklenir
+      // Ama document.hidden = false kalır, bu yüzden state'i değiştirmemeliyiz
+      // Eğer document.hidden = true ise, visibilitychange zaten handle edecek
       this.focusTimeout = setTimeout(() => {
         // Tab hidden = başka tab'a geçti (visibilitychange zaten handle etti)
         if (document.hidden) {
                     return;
         }
+        // ✅ CRITICAL: DevTools açıksa, blur event'i görmezden gel
+        // Adres çubuğuna tıklayınca da blur tetiklenir ama tab visible kalır
+        // Bu durumda state'i değiştirmemeliyiz
+        if (this.devToolsOpen) {
+          // DevTools açık, blur event'ini görmezden gel
+          return;
+        }
         // Tab görünür ama focus yok = başka Windows uygulamasına geçti
-        // NOT: DevTools check kaldırıldı - visibilitychange event'i yeterli
+        // Bu durumda background'a geç (gerçek focus kaybı)
         if (!document.hasFocus()) {
                     this.checkAndUpdateState();
         }
@@ -75,19 +82,30 @@ export class VisibilityTracker {
    * Background if: 
    * 1. Tab is hidden (switched to another tab)
    * 2. Lost focus to another app (detected by blur handler with delay)
+   * 
+   * CRITICAL: Adres çubuğu veya DevTools'a tıklayınca document.hidden = false kalır
+   * Bu durumda foreground state'ini korumalıyız
    */
   private calculateState(): VisibilityState {
     // ✅ Primary check: Is the tab hidden?
+    // Tab hidden = kesinlikle background (başka tab'a geçti veya minimize)
     if (document.hidden) {
       return 'background';
     }
-    // ✅ Secondary check: Complete focus loss
-    // If we don't have focus, we're in background
-    // Note: DevTools blur is handled by the blur handler with delay logic
-    if (!document.hasFocus()) {
-      return 'background';
+    // ✅ CRITICAL: Tab görünür (document.hidden = false)
+    // Bu durumda sadece DevTools kontrolü yap, focus kontrolü YAPMA
+    // Çünkü adres çubuğuna tıklayınca document.hidden = false kalır ama focus kaybolur
+    // Eğer tab görünürse, kullanıcı muhtemelen aktif (adres çubuğu yazıyor veya DevTools açık)
+    // Bu yüzden foreground'da kalmalı
+    
+    // DevTools açıksa → kesinlikle foreground (kullanıcı debug yapıyor)
+    if (this.devToolsOpen) {
+      return 'foreground';
     }
-    // Tab is visible + has focus = foreground
+    
+    // ✅ CRITICAL FIX: Tab görünür (document.hidden = false) ise foreground'da kal
+    // Focus kaybı olsa bile (adres çubuğu, DevTools, vb.) tab görünür olduğu sürece foreground
+    // Sadece document.hidden = true ise background'a geç (başka tab veya minimize)
     return 'foreground';
   }
   /**

@@ -242,7 +242,6 @@ export class PassiveActiveManager {
     
     // Notify parent
     this.config.onStateChange('active');
-    
   }
   
   /**
@@ -259,7 +258,6 @@ export class PassiveActiveManager {
     
     // Notify parent
     this.config.onStateChange('passive_active');
-    
   }
   
   /**

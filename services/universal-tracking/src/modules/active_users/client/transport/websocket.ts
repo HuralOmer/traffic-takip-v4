@@ -8,7 +8,7 @@ export class WebSocketClient {
   private url: string;
   private reconnectAttempts: number = 0;
   private maxReconnectAttempts: number = 5;
-  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private isIntentionallyClosed: boolean = false;
   private onMessage: ((message: ServerMessage) => void) | null = null;
   private onStateChange: ((connected: boolean) => void) | null = null;

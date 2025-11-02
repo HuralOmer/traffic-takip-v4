@@ -64,6 +64,35 @@ export class PresenceService {
   async handleJoin(payload: JoinPayload): Promise<void> {
     const now = Date.now();
     
+    // ✅ CRITICAL FIX: Check for PENDING LEAVE before joining
+    // If PENDING exists, this is internal navigation → don't remove, just update
+    const redisClient = this.redis.getRedisClient();
+    const exactPendingKey = `PENDING_LEAVE:${payload.customerId}:${payload.sessionId}:${payload.tabId}`;
+    let hasPendingLeave = await redisClient.exists(exactPendingKey);
+
+    if (!hasPendingLeave) {
+      // 🆕 B1: Session-level tolerance — accept PENDING with different tabId (short window)
+      const pattern = `PENDING_LEAVE:${payload.customerId}:${payload.sessionId}:*`;
+      try {
+        const keys: string[] = await redisClient.keys(pattern);
+        // Consider as pending if any key exists for same session
+        if (Array.isArray(keys) && keys.length > 0) {
+          hasPendingLeave = true;
+          // Clean up all session-level pending keys
+          for (const k of keys) {
+            await redisClient.del(k);
+          }
+          console.log(`[Presence] 🔄 INTERNAL NAV (session-level) | Session: ${payload.sessionId.substring(0, 8)} | Cleaned ${keys.length} pending keys`);
+        }
+      } catch (e) {
+        // Fallback: ignore scan error, continue
+      }
+    } else {
+      // Exact match pending → clean it
+      await redisClient.del(exactPendingKey);
+      console.log(`[Presence] 🔄 INTERNAL NAVIGATION | TabId: ${payload.tabId} | Session: ${payload.sessionId.substring(0, 8)}`);
+    }
+    
     // Detect platform from user agent (if available)
     const userAgent = payload.userAgent || 'desktop';
     const platform = PlatformDetector.detectPlatform(userAgent);
@@ -78,7 +107,7 @@ export class PresenceService {
     // ✅ CRITICAL FIX: If some fields are missing (e.g., from TTL refresh in polling mode),
     // preserve existing values from Redis
     const existing = await this.redis.getPresence(payload.customerId, payload.sessionId);
-    
+
     const presenceData: PresenceData = {
       customerId: payload.customerId,
       sessionId: payload.sessionId,
@@ -99,7 +128,13 @@ export class PresenceService {
       updatedAt: formatTimestamp(now),
       lastActivity: 'just now',
     };
-    await this.redis.setPresence(presenceData);
+
+    // 🆕 B2: JOIN update-only mode → do not recreate; keep TTL
+    if (payload.updateOnly && existing) {
+      await this.redis.updatePresence(presenceData);
+    } else {
+      await this.redis.setPresence(presenceData);
+    }
     
     // Simple Redis operations - no ZSET needed
     
@@ -159,7 +194,7 @@ export class PresenceService {
   }
   /**
    * Handle user leave
-   * ✅ ZSET-based immediate removal with platform-specific delays
+   * ✅ PENDING grace window + FINAL immediate removal
    */
   async handleLeave(payload: LeavePayload): Promise<boolean> {
     const leaveTime = formatTimestamp(payload.timestamp);
@@ -171,19 +206,73 @@ export class PresenceService {
       return false;
     }
     
-    // Detect platform for removal delay
-    const platform = PlatformDetector.detectPlatform(payload.userAgent || 'desktop');
-    const removalDelay = PlatformDetector.getRemovalDelay(platform);
-    
     const modeInfo = payload.mode === 'final' ? 'FINAL' : 'PENDING';
     console.log(`[Presence] ❌ LEAVE | ${payload.sessionId.substring(0, 8)} | ${leaveTime} | Mode: ${modeInfo} | Reason: ${payload.reason}`);
     
-    // Direct removal - no ZSET needed
-    await this.redis.removePresence(payload.customerId, payload.sessionId);
     
-    console.log(`[Presence] ✅ Session removed from Redis successfully`);
-    
-    return true; // Session removed
+    // ✅ CRITICAL FIX: Handle PENDING vs FINAL differently
+    if (payload.mode === 'pending') {
+      // PENDING: Set grace window (3 seconds) - do NOT remove immediately
+      const pendingKey = `PENDING_LEAVE:${payload.customerId}:${payload.sessionId}:${payload.tabId}`;
+      const redisClient = this.redis.getRedisClient();
+      
+      // Set pending key with 3 second TTL
+      await redisClient.set(pendingKey, payload.timestamp.toString(), { EX: 3 });
+      
+      // ✅ CRITICAL FIX: Schedule delayed removal
+      setTimeout(async () => {
+        try {
+          // Check if PENDING key still exists
+          const exists = await redisClient.exists(pendingKey);
+          
+          if (exists) {
+            // PENDING expired without JOIN → safe to remove (LOG REMOVAL)
+            const sessionId = payload.sessionId.substring(0, 8);
+            console.log(`[Presence] ❌ SESSION REMOVED (grace expired) | ${sessionId} | Reason: ${payload.reason}`);
+            
+            // Delete PENDING key
+            await redisClient.del(pendingKey);
+            
+            // Remove from presence
+            await this.redis.removePresence(payload.customerId, payload.sessionId);
+            
+            // ✅ OPTIMIZATION: Cancel disconnect timer if exists (PENDING grace expired, removal handled)
+            this.cancelDisconnectTimer(payload.customerId, payload.sessionId, true);
+          }
+          // NOTE: If PENDING key was deleted by JOIN, no log needed (normal internal navigation flow)
+        } catch (error) {
+          const sessionId = payload.sessionId.substring(0, 8);
+          console.error(`[Presence] ❌ Error during PENDING grace cleanup for session ${sessionId}:`, error);
+          // Try to clean up PENDING key even on error
+          try {
+            await redisClient.del(pendingKey);
+          } catch (delError) {
+            console.error('[Presence] ❌ Failed to delete PENDING key:', delError);
+          }
+        }
+      }, 3100); // 3100ms (3s TTL + 100ms safety margin)
+      
+      return true;
+    } else {
+      // FINAL: Immediate removal
+      await this.redis.removePresence(payload.customerId, payload.sessionId);
+      
+      // ✅ OPTIMIZATION: Cancel disconnect timer if exists (LEAVE already handled removal)
+      // Bu sayede WebSocket disconnect sonrası gereksiz Redis kontrolü yapılmayacak
+      const timerCancelled = this.cancelDisconnectTimer(payload.customerId, payload.sessionId, true);
+      if (timerCancelled) {
+        console.log(`[Presence] ⏭️ Disconnect timer cancelled (LEAVE handled removal)`);
+      }
+      
+      // ✅ Also remove any PENDING key if exists (cleanup)
+      const pendingKey = `PENDING_LEAVE:${payload.customerId}:${payload.sessionId}:${payload.tabId}`;
+      const redisClient = this.redis.getRedisClient();
+      await redisClient.del(pendingKey);
+      
+      console.log(`[Presence] ✅ Session removed from Redis successfully (FINAL)`);
+      
+      return true;
+    }
   }
   /**
    * 🆕 Refresh TTL for active user (WebSocket heartbeat)

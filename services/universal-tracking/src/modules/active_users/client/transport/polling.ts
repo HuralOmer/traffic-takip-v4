@@ -24,9 +24,6 @@ export class PollingClient {
     // Stop existing
     this.stop();
     
-    const intervalSec = (intervalMs / 1000).toFixed(0);
-    console.log(`[Polling] 📡 Started polling mode (${intervalSec}s interval)`);
-    
     // Fetch immediately
     this.fetchMetrics();
     // Then poll periodically
@@ -73,7 +70,6 @@ export class PollingClient {
       clearInterval(this.interval);
       this.interval = null;
       this.isActive = false;
-      console.log(`[Polling] ⏹️ Stopped polling mode`);
     }
   }
   isPolling(): boolean {

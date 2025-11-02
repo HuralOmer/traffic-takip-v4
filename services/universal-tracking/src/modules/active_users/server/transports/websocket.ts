@@ -126,6 +126,13 @@ export class WebSocketServer {
       });
       // Handle disconnection
       ws.on('close', () => {
+        // ✅ Log disconnect
+        if (customerId) {
+          const clientInfo = this.clientInfoMap.get(ws);
+          console.log(`[WebSocket] \u274C\u274C WebSocket bağlantısı koptu | Customer: ${customerId} | Session: ${clientInfo?.sessionId?.substring(0, 8) || 'unknown'}`);
+        } else {
+          console.log('[WebSocket] \u274C\u274C WebSocket bağlantısı koptu | Customer: unauthorized');
+        }
         // ✅ PHASE 1: Clean up intervals
         clearInterval(pingInterval);
         clearInterval(pongCheckInterval);
@@ -161,54 +168,64 @@ export class WebSocketServer {
     return this.wss;
   }
   /**
-   * 🆕 Handle WebSocket disconnect - remove specific session from Redis
-   * ⚠️ PLATFORM-AWARE: Only for mobile/tablet! Desktop uses TTL expiry.
-   * ⚠️ Grace period (500ms) + Wait 10 seconds to avoid false positives
+   * 🆕 Handle WebSocket disconnect - remove specific session from Redis if no JOIN arrives
+   * ✅ Tüm cihazlar için: WS koptuğunda JOIN gelmezse kaydı sil
+   * ⚠️ Grace period (500ms) + Platform-based timeout (Desktop: 5s, Mobile/Tablet: 10s)
    */
   private async handleWebSocketDisconnect(customerId: string, sessionId: string, device?: string): Promise<void> {
     try {
-      // 🆕 CRITICAL: Desktop → Skip aggressive cleanup!
-      // Desktop users often switch tabs or apps, but should stay in Redis
-      // TTL (30s) will handle cleanup naturally
-      if (device === 'desktop') {
-        return; // Desktop: Let TTL handle cleanup
-      }
-      // 📱 Mobile/Tablet: Aggressive cleanup (10s timer)
-            // 🆕 CRITICAL: 500ms grace period - JOIN request olabilir!
+      // ✅ Tüm cihazlar için timer başlat (desktop için daha kısa süre)
+      const timeoutMs = device === 'desktop' ? 5000 : 10000; // Desktop: 5s, Mobile/Tablet: 10s
+      
+      // 🆕 CRITICAL: 500ms grace period - JOIN request olabilir!
       // Sayfa navigation, tab duplicate gibi durumlarda JOIN gelebilir
       await new Promise(resolve => setTimeout(resolve, 500));
-      // Grace period sonrası kontrol: Timer iptal edilmiş mi?
-      const sessionKey = `${customerId}:${sessionId}`;
-      // Eğer bu süre içinde JOIN geldi ve timer iptal edildiyse, burada durmalıyız
-      // Ama henüz timer başlatılmadı, o yüzden devam edebiliriz
-            // ✅ Wait 10 seconds before cleanup to avoid false positives
-      // Mobilde tab switcher açılınca da disconnect oluyor, ama hemen kapanmıyor
-      // X'e basınca gerçekten kapanıyor, 10 saniye reconnect yok
+      
+      // ✅ OPTIMIZATION: Check if key already deleted (LEAVE already handled)
+      // Eğer LEAVE önce geldiyse, timer başlatmaya gerek yok
+      const keyTTL = await this.presence.getKeyTTL(customerId, sessionId);
+      if (keyTTL === -2) {
+        // Key zaten silinmiş (LEAVE önce gelmiş) → Timer başlatmaya gerek yok
+        console.log(`[WebSocket] ⏭️ Key already deleted (LEAVE handled) - skipping timer for ${sessionId.substring(0, 8)}`);
+        return;
+      }
+      
       const timer = setTimeout(async () => {
         try {
           // 🆕 CRITICAL FIRST: Remove timer from map IMMEDIATELY (silent mode)
           this.presence.cancelDisconnectTimer(customerId, sessionId, true);
-                    // 🆕 SIMPLE & RELIABLE: Redis'ten key TTL'ini kontrol et
-          // Eğer kullanıcı geri döndüyse, JOIN request gelmiş ve TTL 30s'ye set edilmiştir
+          
+          // 🆕 SIMPLE & RELIABLE: Redis'ten key TTL'ini kontrol et
+          // Eğer kullanıcı geri döndüyse, JOIN request gelmiş ve TTL güncellenmiştir
           const keyTTL = await this.presence.getKeyTTL(customerId, sessionId);
-                    if (keyTTL === -2) {
+          
+          if (keyTTL === -2) {
             // Key yok, zaten silinmiş
-                        return;
-          }
-          if (keyTTL > 15) {
-            // TTL > 15s = Kullanıcı aktif (yakın zamanda JOIN geldi)
+            console.log(`[WebSocket] ⏭️ Key already deleted for ${sessionId.substring(0, 8)}`);
             return;
           }
-          // TTL < 15s veya -1 (TTL yok) = Kullanıcı inactive
-          // Remove this specific session
+          
+          // TTL kontrolü: Eğer TTL yüksekse (örn. > 10s), JOIN gelmiş demektir
+          const threshold = device === 'desktop' ? 10 : 15; // Desktop için daha kısa threshold
+          if (keyTTL > threshold) {
+            // TTL yüksek = Kullanıcı aktif (yakın zamanda JOIN geldi)
+            console.log(`[WebSocket] ✅ JOIN received (TTL: ${keyTTL}s) - keeping session ${sessionId.substring(0, 8)}`);
+            return;
+          }
+          
+          // TTL düşük veya yok = JOIN gelmemiş, kullanıcı gerçekten çıkmış
+          console.log(`[WebSocket] 🗑️ No JOIN received within ${timeoutMs}ms - removing session ${sessionId.substring(0, 8)}`);
           await this.presence.removePresence(customerId, sessionId);
-                  } catch (error) {
+        } catch (error) {
           console.error(`[WebSocket] Error during delayed disconnect cleanup for ${sessionId}:`, error);
         }
-      }, 10000); // 10 second delay (tab switcher için yeterli süre)
+      }, timeoutMs);
+      
       // 🆕 Store timer in PresenceService (shared between WebSocket and REST endpoints)
+      // Eğer JOIN gelirse, bu timer iptal edilecek
       this.presence.setDisconnectTimer(customerId, sessionId, timer);
-          } catch (error) {
+      console.log(`[WebSocket] ⏳ Started disconnect timer (${timeoutMs}ms) for ${sessionId.substring(0, 8)} | Device: ${device || 'unknown'}`);
+    } catch (error) {
       console.error(`[WebSocket] Error during disconnect cleanup for ${sessionId}:`, error);
     }
   }

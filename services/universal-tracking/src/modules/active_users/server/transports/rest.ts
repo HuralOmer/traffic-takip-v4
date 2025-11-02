@@ -46,6 +46,7 @@ export function setupRESTEndpoints(
   /**
    * POST /presence/join
    * User joins (new session)
+   * ✅ IMPROVEMENT 5: Safari ITP - Server-set cookie (geriye uyumlu)
    */
   fastify.post<{ Body: JoinPayload }>(
     '/presence/join',
@@ -60,7 +61,35 @@ export function setupRESTEndpoints(
         if (!payload.customerId || !payload.sessionId || !payload.tabId) {
           return reply.code(400).send({ error: 'Missing required fields' });
         }
-        await presenceService.handleJoin(payload);
+        
+        // ✅ IMPROVEMENT 5: Safari ITP - Server-set cookie (geriye uyumlu)
+        // Client-side sessionId varsa onu kullan, yoksa server-side generate et
+        // Cookie set et (Safari ITP için kritik)
+        const sessionId = payload.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        
+        // ✅ CRITICAL FIX: Cookie'yi manuel olarak Set-Cookie header ile set et
+        // @fastify/cookie plugin'i yüklü değil, bu yüzden manuel header kullanıyoruz
+        const isSecure = request.protocol === 'https' || 
+                        request.headers['x-forwarded-proto'] === 'https' ||
+                        request.headers['x-forwarded-ssl'] === 'on';
+        const cookieOptions = [
+          `sid=${sessionId}`,
+          `Path=/`,
+          `Max-Age=3600`,
+          `HttpOnly`,
+          `SameSite=Lax`,
+          ...(isSecure ? ['Secure'] : [])
+        ].join('; ');
+        reply.header('Set-Cookie', cookieOptions);
+        
+        // ✅ IMPROVEMENT 4: UA Client Hints - Accept-CH header (server-side)
+        // Browser'a Client Hints göndermesini söyle
+        reply.header('Accept-CH', 'Sec-CH-UA, Sec-CH-UA-Platform, Sec-CH-UA-Model, Sec-CH-UA-Arch, Sec-CH-UA-Full-Version-List');
+        reply.header('Permissions-Policy', 'ch-ua-model=(*), ch-ua-platform=(*), ch-ua-arch=(*), ch-ua-full-version-list=(*), ch-ua-platform-version=(*)');
+        
+        // Payload'ı güncelle (server-side sessionId kullan)
+        const updatedPayload = { ...payload, sessionId };
+        await presenceService.handleJoin(updatedPayload);
         return reply.code(200).send({ success: true });
       } catch (error) {
         console.error('[REST] Join error:', error);

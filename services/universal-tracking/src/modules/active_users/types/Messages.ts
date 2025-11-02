@@ -25,6 +25,8 @@ export interface JoinPayload {
   sessionId: string;
   tabId: string;
   timestamp: number;
+  // Optional: when true, server should only update fields (no recreate, keep TTL)
+  updateOnly?: boolean;
   platform?: string | undefined;
   browser?: string | undefined;
   device?: string | undefined;

@@ -105,6 +105,37 @@ export async function sdkRoutes(fastify: FastifyInstance) {
       });
       // Expose globally for debugging
       window.ActiveUsersTracker = client;
+      // Expose persistent log helpers (always available)
+      (function(){
+        function append(level, parts){
+          try {
+            var now = new Date().toISOString();
+            var msg = [];
+            for (var i=0;i<parts.length;i++){
+              try { msg.push(typeof parts[i] === 'string' ? parts[i] : JSON.stringify(parts[i])); } catch(_) { msg.push(String(parts[i])); }
+            }
+            var entry = { ts: now, level: level, message: msg.join(' ') };
+            var raw = localStorage.getItem('activeUsers.logs');
+            var list = raw ? JSON.parse(raw) : [];
+            list.push(entry);
+            if (list.length > 500) { list.splice(0, list.length - 500); }
+            localStorage.setItem('activeUsers.logs', JSON.stringify(list));
+          } catch(_) {}
+        }
+        // Public API
+        window.ActiveUsersLogs = window.ActiveUsersLogs || {
+          read: function(){ try { return JSON.parse(localStorage.getItem('activeUsers.logs')||'[]'); } catch(_) { return []; } },
+          clear: function(){ try { localStorage.removeItem('activeUsers.logs'); } catch(_) {} },
+        };
+        // If debug enabled, mirror key console logs into buffer
+        if (${debug}) {
+          var origLog = console.log, origInfo = console.info, origWarn = console.warn, origError = console.error;
+          console.log = function(){ append('log', Array.prototype.slice.call(arguments)); return origLog.apply(console, arguments); };
+          console.info = function(){ append('info', Array.prototype.slice.call(arguments)); return origInfo.apply(console, arguments); };
+          console.warn = function(){ append('warn', Array.prototype.slice.call(arguments)); return origWarn.apply(console, arguments); };
+          console.error = function(){ append('error', Array.prototype.slice.call(arguments)); return origError.apply(console, arguments); };
+        }
+      })();
     }
     // 🆕 CRITICAL: Ensure page is visible before init
     function safeInit() {
@@ -162,17 +193,15 @@ export async function sdkRoutes(fastify: FastifyInstance) {
           .header('X-Cache-Status', 'DISABLED-DEV')
           .send(fullScript);
       } else {
-        // Production: Very short cache (30 seconds) with ETag validation
-        // Browsers will revalidate after 30 seconds using ETag
-        // If content unchanged, server returns 304 (handled above)
+        // Production: no-store (no cache at all) + ETag for 304 responses
         return reply
           .type('application/javascript; charset=utf-8')
-          .header('Cache-Control', 'public, max-age=30, must-revalidate') // 30 seconds
+          .header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
           .header('ETag', contentHash)
           .header('Last-Modified', new Date().toUTCString())
           .header('X-Content-Type-Options', 'nosniff')
           .header('X-SDK-Version', contentHash)
-          .header('X-Cache-Status', 'ENABLED-PROD-30S')
+          .header('X-Cache-Status', 'NO-STORE-PROD')
           .send(fullScript);
       }
     } catch (error) {

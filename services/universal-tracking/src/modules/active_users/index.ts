@@ -12,6 +12,7 @@
  */
 // Client-side exports
 export { ActiveUsersClient } from './client/index.js';
+export { Logger } from './client/utils/logger.js';
 // Server-side exports  
 export { ActiveUsersServer } from './server/index.js';
 // Type exports

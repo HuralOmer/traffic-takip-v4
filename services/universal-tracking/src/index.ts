@@ -35,7 +35,29 @@ async function bootstrap() {
 
   // Create Fastify instance
   const fastify = Fastify({
-    logger: true,
+    logger: {
+      level: 'info',
+      serializers: {
+        req(req) {
+          // ✅ OPTIONS (CORS preflight) loglarını skip
+          if (req.method === 'OPTIONS') {
+            return undefined as any;
+          }
+          // ✅ GET /active-users/metrics (polling) loglarını skip
+          if (req.method === 'GET' && req.url?.includes('/active-users/metrics')) {
+            return undefined as any;
+          }
+          return {
+            method: req.method,
+            url: req.url,
+            hostname: req.hostname,
+            remoteAddress: req.ip,
+            remotePort: req.socket?.remotePort,
+          };
+        },
+      },
+    },
+    disableRequestLogging: false,
     trustProxy: true,
   });
 

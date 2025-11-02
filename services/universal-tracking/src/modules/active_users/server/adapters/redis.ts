@@ -47,12 +47,20 @@ export class RedisAdapter {
   /**
    * Update user presence without resetting TTL
    * ✅ FIXED: node-redis v5 compatible TTL preservation
+   * ✅ CRITICAL: If session_mode changed, update TTL accordingly
    */
   async updatePresence(data: PresenceData): Promise<void> {
     const key = this.getPresenceKey(data.customerId, data.sessionId);
     // Get existing data to calculate lastActivity
     const existing = await this.getPresence(data.customerId, data.sessionId);
     const createdAt = existing?.createdAt || data.createdAt;
+    
+    // ✅ Check if session_mode changed BEFORE updating data
+    const sessionModeChanged = existing && existing.session_mode !== data.session_mode;
+    
+    // ✅ Get current TTL BEFORE setting new value (important!)
+    const currentTTL = existing ? await this.redis.ttl(key) : -1;
+    
     // ✅ Update timestamps in hybrid format
     const now = Date.now();
     const updatedData = {
@@ -63,13 +71,21 @@ export class RedisAdapter {
     };
     const value = JSON.stringify(updatedData);
     
-    // ✅ FIXED: node-redis v5 compatible - preserve existing TTL
-    const currentTTL = await this.redis.ttl(key);
     await this.redis.set(key, value);
     
-    // Restore TTL if it existed and was positive
-    if (currentTTL > 0) {
-      await this.redis.expire(key, currentTTL);
+    if (sessionModeChanged) {
+      // ✅ CRITICAL: If session_mode changed, update TTL based on new mode
+      const newTTL = this.getSessionBasedTTL(data.session_mode);
+      await this.redis.expire(key, newTTL);
+    } else {
+      // ✅ Preserve existing TTL if session_mode didn't change
+      if (currentTTL > 0) {
+        await this.redis.expire(key, currentTTL);
+      } else {
+        // If TTL was 0 or missing, set default TTL based on current session_mode
+        const ttl = this.getSessionBasedTTL(data.session_mode);
+        await this.redis.expire(key, ttl);
+      }
     }
   }
   /**

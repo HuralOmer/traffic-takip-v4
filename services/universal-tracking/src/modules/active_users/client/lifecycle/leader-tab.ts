@@ -14,14 +14,14 @@ export class TabLeaderManager {
   private channel: BroadcastChannel | null = null;
   private isLeader: boolean = false;
   private tabId: string;
-  private leaderCheckInterval: NodeJS.Timeout | null = null;
+  private leaderCheckInterval: ReturnType<typeof setInterval> | null = null;
   private lastLeaderBeat: number = 0; // Leader beat tracking (kept for compatibility)
   private onLeaderChange: ((isLeader: boolean) => void) | null = null;
   private candidates: Set<string> = new Set(); // ✅ Election candidates tracking
   // 🆕 Tab Tracking
   private allTabs: Map<string, TabStateInfo> = new Map();
   // 🆕 Debouncing için
-  private discoveryTimeout: NodeJS.Timeout | null = null;
+  private discoveryTimeout: ReturnType<typeof setTimeout> | null = null;
   constructor(customerId: string, sessionId: string, tabId: string) {
     this.channelName = `au_leader_${customerId}_${sessionId}`;
     this.tabId = tabId;
