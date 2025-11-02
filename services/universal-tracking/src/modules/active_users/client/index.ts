@@ -408,6 +408,15 @@ export class ActiveUsersClient {
       // ✅ MOBILE/TABLET: Immediate LEAVE on background (no passive_active mode)
       if (this.isMobileOrTabletDevice) {
         if (currentState === 'background') {
+          // ✅ Reload detection: If unload handler reports reload in progress, skip LEAVE
+          if (this.unload.isReloadingInProgress?.()) {
+            this.logger.log('📱 Mobile/Tablet background → Reload detected → Skipping LEAVE');
+            this.mobileLeaveSent = false;
+            (this.connection as any).resetIntentionallyStopped?.();
+            this.unload.resetLeaveSentFlag?.();
+            return;
+          }
+
           // ✅ Mobile/Tablet: Background'a geçildiğinde hemen LEAVE gönder
           this.logger.log('📱 Mobile/Tablet background → Sending LEAVE immediately');
           // ✅ CRITICAL: Flag already set above (before debounce), but ensure it's set here too

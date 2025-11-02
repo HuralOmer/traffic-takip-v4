@@ -147,6 +147,32 @@ export class UnloadHandler {
     } catch (error) {
       console.warn('[Unload] Navigation API setup error:', error);
     }
+
+    // ✅ Override window.location.reload to mark reload intent (fallback for browsers without Navigation API)
+    try {
+      const originalReload = window.location.reload.bind(window.location);
+      window.location.reload = (...args: Parameters<Location['reload']>) => {
+        console.log('[Unload] location.reload() override triggered');
+        this.isReloading = true;
+        return originalReload(...args);
+      };
+    } catch (error) {
+      console.warn('[Unload] Failed to override location.reload:', error);
+    }
+
+    // ✅ Override history.go(0) which is another way to trigger reload
+    try {
+      const originalGo = history.go.bind(history);
+      history.go = (delta?: number) => {
+        if (delta === 0 || delta === undefined) {
+          console.log('[Unload] history.go(0) override triggered');
+          this.isReloading = true;
+        }
+        return originalGo(delta);
+      };
+    } catch (error) {
+      console.warn('[Unload] Failed to override history.go:', error);
+    }
   }
 
   /**
@@ -437,6 +463,13 @@ export class UnloadHandler {
     } catch {}
 
     return false;
+  }
+
+  /**
+   * Public helper: Is reload currently in progress?
+   */
+  isReloadingInProgress(): boolean {
+    return this.isReloading;
   }
 }
 
