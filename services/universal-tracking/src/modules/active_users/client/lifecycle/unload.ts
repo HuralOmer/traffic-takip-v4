@@ -131,6 +131,22 @@ export class UnloadHandler {
 
     // Note: window.location.reload cannot be intercepted in modern browsers (read-only)
     // Navigation Timing API is sufficient for reload detection
+
+    // ✅ Modern Navigation API - upcoming navigation'ı önceden yakala (Chrome 111+, Safari 17+)
+    try {
+      const navObj = (window as any)?.navigation;
+      if (navObj && typeof navObj.addEventListener === 'function') {
+        navObj.addEventListener('navigate', (event: any) => {
+          const navType = event?.navigationType || event?.destination?.type;
+          if (navType === 'reload') {
+            console.log('[Unload] RELOAD detected via Navigation API navigate event');
+            this.isReloading = true;
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('[Unload] Navigation API setup error:', error);
+    }
   }
 
   /**
@@ -250,8 +266,12 @@ export class UnloadHandler {
       }
 
       // ✅ CRITICAL: Backup flags before reset (for logging and decision making)
-      let wasInternalNav = this.isInternalNav;
-      let wasReloading = this.isReloading;
+      const wasInternalNav = this.isInternalNav;
+      const wasReloading = this.isReloading;
+
+      // ✅ CRITICAL: Detect reload via Navigation API (timing-safe for pagehide)
+      // pageshow event'i yeni dokümanda tetiklendiği için eski doküman bu flag'i alamıyor
+      const navigationReloadDetected = this.detectReloadNavigation();
 
       // Şimdiki cycle için bayrakları temizle
       this.isInternalNav = false;
@@ -259,12 +279,11 @@ export class UnloadHandler {
 
       console.log('[Unload:pagehide] wasInternalNav:', wasInternalNav, '| wasReloading:', wasReloading);
 
-      // ✅ CRITICAL: Mobile/Tablet reload → NO LEAVE (Redis'te kayıt kalmalı)
-      // Desktop reload → NO LEAVE (zaten var)
-      // Reload ise LEAVE gönderme
-      if (wasReloading) {
+      // ✅ CRITICAL: Reload → NO LEAVE
+      // wasReloading flag'i yeni dokümanda set ediliyor; navigationReloadDetected eski dokümanda tespit için ek güvenlik
+      if (wasReloading || navigationReloadDetected) {
         if (this.isMobileOrTablet) {
-          console.log('[Unload:pagehide] RELOAD (Mobile/Tablet) → NO LEAVE (Redis kaydı korunuyor)');
+          console.log('[Unload:pagehide] RELOAD (Mobile/Tablet detected via Navigation API) → NO LEAVE (Redis kaydı korunuyor)');
         } else {
           console.log('[Unload:pagehide] RELOAD (Desktop) → NO LEAVE');
         }
@@ -376,6 +395,48 @@ export class UnloadHandler {
    */
   private isAllowedOrigin(origin: string): boolean {
     return this.allowedOrigins.has(origin);
+  }
+
+  /**
+   * Detect reload navigation using available browser APIs
+   * pagehide sırasında çalışır ve gelecek navigasyonun reload olup olmadığını belirlemeye çalışır
+   */
+  private detectReloadNavigation(): boolean {
+    try {
+      if (typeof performance !== 'undefined' && typeof performance.getEntriesByType === 'function') {
+        const entries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+        if (entries && entries.length > 0) {
+          const navType = entries[0]?.type;
+          if (navType === 'reload') {
+            return true;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[Unload] Navigation Timing reload detection error:', error);
+    }
+
+    // Legacy Navigation API (deprecated but still available in some browsers)
+    try {
+      const legacyNav = (performance as any)?.navigation;
+      if (legacyNav && typeof legacyNav.type === 'number') {
+        // 1 === TYPE_RELOAD
+        if (legacyNav.type === 1) {
+          return true;
+        }
+      }
+    } catch {}
+
+    // Modern Navigation API
+    try {
+      const navObj = (window as any)?.navigation;
+      const transitionType = navObj?.transition?.navigationType || navObj?.transition?.type;
+      if (transitionType === 'reload') {
+        return true;
+      }
+    } catch {}
+
+    return false;
   }
 }
 
