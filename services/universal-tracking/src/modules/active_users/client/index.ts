@@ -196,6 +196,9 @@ export class ActiveUsersClient {
     this.isMobileOrTabletDevice = detectedDevice === 'mobile' || detectedDevice === 'tablet' || 
                                    detectedPlatform === 'android' || detectedPlatform === 'ios';
     
+    // ✅ CRITICAL: Set mobile/tablet flag in UnloadHandler (for reload handling)
+    this.unload.setIsMobileOrTablet(this.isMobileOrTabletDevice);
+    
     // ✅ CRITICAL: Initialize Passive Active Manager AFTER device detection (Desktop ONLY)
     if (!this.isMobileOrTabletDevice) {
       // Desktop: Enable PassiveActive

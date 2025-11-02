@@ -7,6 +7,7 @@ import type { LeavePayload } from '../../types/Messages.js';
 
 interface UnloadHandlerOptions {
   allowedOrigins?: string[];
+  isMobileOrTablet?: boolean; // ✅ Mobile/Tablet flag for reload handling
 }
 
 export class UnloadHandler {
@@ -19,6 +20,7 @@ export class UnloadHandler {
   private leaveSent = false;
   private isReloading = false;
   private isInternalNav = false;
+  private isMobileOrTablet: boolean = false; // ✅ Mobile/Tablet flag
 
   constructor(
     customerId: string,
@@ -35,6 +37,16 @@ export class UnloadHandler {
     this.allowedOrigins = new Set(
       options.allowedOrigins?.length ? options.allowedOrigins : [window.location.origin]
     );
+    
+    // ✅ Mobile/Tablet flag for reload handling
+    this.isMobileOrTablet = options.isMobileOrTablet || false;
+  }
+  
+  /**
+   * Public API: Set mobile/tablet flag (called after device detection)
+   */
+  setIsMobileOrTablet(isMobileOrTablet: boolean): void {
+    this.isMobileOrTablet = isMobileOrTablet;
   }
 
   setup(): void {
@@ -247,9 +259,15 @@ export class UnloadHandler {
 
       console.log('[Unload:pagehide] wasInternalNav:', wasInternalNav, '| wasReloading:', wasReloading);
 
+      // ✅ CRITICAL: Mobile/Tablet reload → NO LEAVE (Redis'te kayıt kalmalı)
+      // Desktop reload → NO LEAVE (zaten var)
       // Reload ise LEAVE gönderme
       if (wasReloading) {
-        console.log('[Unload:pagehide] RELOAD (via flag) → NO LEAVE');
+        if (this.isMobileOrTablet) {
+          console.log('[Unload:pagehide] RELOAD (Mobile/Tablet) → NO LEAVE (Redis kaydı korunuyor)');
+        } else {
+          console.log('[Unload:pagehide] RELOAD (Desktop) → NO LEAVE');
+        }
         this.isReloading = false;
         return;
       }
