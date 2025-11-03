@@ -20,6 +20,7 @@ import type { ActiveUserMetrics, MetricsResponse } from '../types/index.js';
 import { detectDevice } from '../../device_detection/index.js';
 // Passive Active module
 import { PassiveActiveManager, type SessionMode } from './passive_active/index.js';
+import { extractReferrerInfo, type ReferrerInfo, type ReferrerNavigationType } from '../../referrer/index.js';
 export class ActiveUsersClient {
   private config: Required<ClientConfig>;
   private session: SessionState;
@@ -47,6 +48,7 @@ export class ActiveUsersClient {
   private isMobileOrTabletDevice: boolean = false;
   // ✅ Mobile/Tablet: Flag to prevent JOIN after LEAVE in background
   private mobileLeaveSent: boolean = false;
+  private referrerInfo: ReferrerInfo | null = null;
   // Current status tracking
   private currentStatus = {
     connection: 'disconnected' as 'websocket' | 'polling' | 'disconnected',
@@ -717,6 +719,22 @@ export class ActiveUsersClient {
     
     const tabCounts = this.tabLeader.getTabCounts();
     const total_tab_quantity = tabCounts.total;
+
+    if (!this.referrerInfo) {
+      try {
+        const navigationType = this.getNavigationType();
+        this.referrerInfo = extractReferrerInfo({
+          referrer: typeof document !== 'undefined' ? document.referrer : null,
+          currentUrl: typeof window !== 'undefined' ? window.location.href : null,
+          navigationType,
+        });
+      } catch (error) {
+        if (this.config.debug) {
+          console.warn('[ActiveUsers] Failed to extract referrer info:', error);
+        }
+        this.referrerInfo = null;
+      }
+    }
     
     this.session.refreshSession();
     try {
@@ -732,7 +750,8 @@ export class ActiveUsersClient {
         userAgent,
         desktop_mode,
         total_tab_quantity,
-        sessionModeToSend
+        sessionModeToSend,
+        this.referrerInfo || undefined
       );
     } finally {
       // 🆕 Reset pending flag after 1 second (allow next JOIN)
@@ -854,6 +873,43 @@ export class ActiveUsersClient {
       return status;
     },
   };
+
+  private getNavigationType(): ReferrerNavigationType {
+    if (typeof performance === 'undefined') {
+      return 'unknown';
+    }
+    try {
+      const entries = performance.getEntriesByType?.('navigation');
+      if (entries && entries.length > 0) {
+        const nav = entries[0] as PerformanceNavigationTiming;
+        if (nav && nav.type) {
+          switch (nav.type) {
+            case 'navigate':
+              return 'navigate';
+            case 'reload':
+              return 'reload';
+            case 'back_forward':
+              return 'back_forward';
+            case 'prerender':
+              return 'prerender';
+            default:
+              return 'unknown';
+          }
+        }
+      }
+    } catch {}
+    try {
+      const legacy = (performance as any).navigation;
+      if (legacy) {
+        const type = legacy.type;
+        if (type === legacy.TYPE_NAVIGATE) return 'navigate';
+        if (type === legacy.TYPE_RELOAD) return 'reload';
+        if (type === legacy.TYPE_BACK_FORWARD) return 'back_forward';
+        if (type === 4) return 'prerender';
+      }
+    } catch {}
+    return 'unknown';
+  }
 
   /**
    * Check if this tab is leader

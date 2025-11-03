@@ -7,6 +7,7 @@ import { PollingClient } from '../transport/polling.js';
 import { HttpClient } from '../transport/http.js';
 import type { ClientConfig } from '../../types/Config.js';
 import type { ServerMessage, ClientMessage, MetricsResponse, JoinPayload } from '../../types/Messages.js';
+import type { ReferrerInfo } from '../../../referrer/types.js';
 export type ConnectionMode = 'websocket' | 'polling';
 export type AppState = 'foreground' | 'background';
 export type SessionMode = 'active' | 'passive_active' | 'removed';
@@ -37,6 +38,7 @@ export class HybridConnectionManager {
     desktop_mode?: boolean;
     userAgent?: string;
   } = {};
+  private cachedReferrer?: ReferrerInfo;
   constructor(
     config: Required<ClientConfig>,
     customerId: string,
@@ -331,7 +333,8 @@ export class HybridConnectionManager {
     userAgent?: string,
     desktop_mode?: boolean,
     total_tab_quantity?: number,
-    session_mode?: SessionMode
+    session_mode?: SessionMode,
+    referrer?: ReferrerInfo
   ): Promise<void> {
     // 🆕 Cache device info for TTL refresh
     // Only set properties that have defined values (exactOptionalPropertyTypes compliance)
@@ -340,6 +343,7 @@ export class HybridConnectionManager {
     if (device) this.cachedDeviceInfo.device = device;
     if (desktop_mode !== undefined) this.cachedDeviceInfo.desktop_mode = desktop_mode;
     if (userAgent) this.cachedDeviceInfo.userAgent = userAgent;
+    if (referrer) this.cachedReferrer = referrer;
     
     // Determine update-only intent on fresh page load
     let updateOnly: boolean | undefined = undefined;
@@ -372,6 +376,7 @@ export class HybridConnectionManager {
       desktop_mode,
       total_tab_quantity,
       ...(session_mode && session_mode !== 'removed' && { session_mode }),
+      ...(referrer ?? this.cachedReferrer ? { referrer: referrer ?? this.cachedReferrer } : {}),
     };
     await this.httpClient.join(payload);
   }

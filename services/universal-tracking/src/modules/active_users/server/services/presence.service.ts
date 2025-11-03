@@ -127,6 +127,8 @@ export class PresenceService {
       city: payload.city || existing?.city,
       regionName: payload.regionName || existing?.regionName,
       ip: payload.ip || existing?.ip,
+      ipVersion: payload.ipVersion || existing?.ipVersion,
+      referrer: payload.referrer || existing?.referrer,
       // Tab Tracking
       total_tab_quantity: payload.total_tab_quantity !== undefined ? payload.total_tab_quantity : existing?.total_tab_quantity,
       // Session Mode - preserve existing if not provided, default to 'active'
@@ -153,7 +155,12 @@ export class PresenceService {
     const platformInfo = ` | Platform: ${platform} (${presenceData.platform}/${presenceData.browser}/${presenceData.device})`;
     const regionInfo = presenceData.regionName ? ` | Region: ${presenceData.regionName}` : '';
     const countryInfo = presenceData.country ? ` | Country: ${presenceData.country}` : '';
-    console.log(`[Presence] ✅ JOIN | ${payload.sessionId.substring(0, 8)} | ${sessionTime}${desktopModeWarning}${tabInfo}${sessionModeInfo}${platformInfo}${regionInfo}${countryInfo}`);
+    const ipInfo = presenceData.ipVersion ? ` | IP Version: ${presenceData.ipVersion}` : '';
+    const referrerInfo = presenceData.referrer?.source
+      ? ` | Referrer: ${presenceData.referrer.source} (${presenceData.referrer.sourceCategory})`
+      : '';
+    const ttclidInfo = presenceData.referrer?.ttclid ? ` | ttclid: ${presenceData.referrer.ttclid}` : '';
+    console.log(`[Presence] ✅ JOIN | ${payload.sessionId.substring(0, 8)} | ${sessionTime}${desktopModeWarning}${tabInfo}${sessionModeInfo}${platformInfo}${regionInfo}${countryInfo}${ipInfo}${referrerInfo}${ttclidInfo}`);
   }
   /**
    * Handle heartbeat (beat)

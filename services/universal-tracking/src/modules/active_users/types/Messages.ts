@@ -1,6 +1,8 @@
 /**
  * WebSocket and API Message Types
  */
+import type { ReferrerInfo } from '../../referrer/types.js';
+
 // WebSocket messages from client to server
 export type ClientMessage = 
   | { type: 'auth'; customerId: string; sessionId: string; tabId: string }
@@ -38,6 +40,8 @@ export interface JoinPayload {
   city?: string | undefined;
   regionName?: string | undefined;
   ip?: string | undefined;
+  ipVersion?: 'ipv4' | 'ipv6' | 'unknown';
+  referrer?: ReferrerInfo;
 }
 export interface BeatPayload {
   customerId: string;

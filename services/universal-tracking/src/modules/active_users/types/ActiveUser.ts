@@ -1,6 +1,7 @@
 /**
  * Active User Type Definitions
  */
+import type { ReferrerInfo } from '../../referrer/types.js';
 export interface ActiveUser {
   customerId: string;
   sessionId: string;
@@ -26,6 +27,8 @@ export interface PresenceData {
   city?: string | undefined;
   regionName?: string | undefined;
   ip?: string | undefined;
+  ipVersion?: 'ipv4' | 'ipv6' | 'unknown';
+  referrer?: ReferrerInfo;
   // Tab Tracking
   total_tab_quantity?: number | undefined;
   // Session Mode

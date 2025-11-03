@@ -4,6 +4,8 @@
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import geoip from 'geoip-lite';
+import { isIP } from 'node:net';
+import { extractReferrerInfo, mergeReferrerInfo } from '../../../referrer/index.js';
 import ISO3166 from 'iso-3166-2';
 import { PresenceService } from '../services/presence.service.js';
 import { EMAService } from '../services/ema.service.js';
@@ -105,8 +107,22 @@ export function setupRESTEndpoints(
         reply.header('Accept-CH', 'Sec-CH-UA, Sec-CH-UA-Platform, Sec-CH-UA-Model, Sec-CH-UA-Arch, Sec-CH-UA-Full-Version-List');
         reply.header('Permissions-Policy', 'ch-ua-model=(*), ch-ua-platform=(*), ch-ua-arch=(*), ch-ua-full-version-list=(*), ch-ua-platform-version=(*)');
 
-        const clientIp = extractClientIp(request);
-        const geo = geoip.lookup(clientIp);
+        const clientIpRaw = extractClientIp(request);
+        // IPv6 scope id (e.g., %eth0) varsa temizle
+        const clientIp = clientIpRaw.includes('%') ? clientIpRaw.split('%', 1)[0]! : clientIpRaw;
+
+        const ipVersionNumeric = isIP(clientIp);
+        const ipVersion: 'ipv4' | 'ipv6' | 'unknown' = ipVersionNumeric === 4 ? 'ipv4' : ipVersionNumeric === 6 ? 'ipv6' : 'unknown';
+
+        let geo = geoip.lookup(clientIp);
+        // IPv6 kayıtları sınırlı → gerekirse IPv4-mapped varyasyonları dene
+        if (!geo && ipVersion === 'ipv6') {
+          // IPv4-mapped adres mi kontrol et (::ffff:)
+          if (clientIp.startsWith('::ffff:')) {
+            const mapped = clientIp.replace('::ffff:', '');
+            geo = geoip.lookup(mapped);
+          }
+        }
         const countryCode = geo?.country ?? undefined;
         const countryNameLookup = countryCode ? ISO3166.country(countryCode) : undefined;
         const country = countryNameLookup?.name || payload.country || countryCode || 'Unknown';
@@ -122,8 +138,23 @@ export function setupRESTEndpoints(
           regionName = regionCode;
         }
 
+        const referrerFromClient = payload.referrer;
+        const referrerFromServer = extractReferrerInfo({
+          referrer: (request.headers['referer'] as string | undefined) ?? null,
+        });
+        const referrerCombined = mergeReferrerInfo(referrerFromClient, referrerFromServer);
+
         // Payload'ı güncelle (server-side sessionId kullan)
-        const updatedPayload = { ...payload, sessionId, country, city, ip: clientIp, regionName };
+        const updatedPayload = {
+          ...payload,
+          sessionId,
+          country,
+          city,
+          ip: clientIp,
+          regionName,
+          ipVersion,
+          ...(referrerCombined ? { referrer: referrerCombined } : {}),
+        };
         await presenceService.handleJoin(updatedPayload);
         return reply.code(200).send({ success: true });
       } catch (error) {
