@@ -5,7 +5,7 @@
 import { RedisAdapter } from '../adapters/redis.js';
 import type { JoinPayload, BeatPayload, LeavePayload } from '../../types/Messages.js';
 import type { PresenceData } from '../../types/ActiveUser.js';
-import { formatTimestamp, getRelativeTime } from '../utils/timestamp.js';
+import { formatTimestamp } from '../utils/timestamp.js';
 import { PlatformDetector } from '../utils/platform-detector.js';
 export class PresenceService {
   private redis: RedisAdapter;
@@ -118,20 +118,22 @@ export class PresenceService {
       sessionId: payload.sessionId,
       tabId: payload.tabId,
       isLeader: true,
-      // Device Info - preserve existing if not provided
+      // Device Info
       platform: payload.platform || existing?.platform,
       browser: payload.browser || existing?.browser,
       device: payload.device || existing?.device,
       desktop_mode: payload.desktop_mode !== undefined ? payload.desktop_mode : existing?.desktop_mode,
-      // Tab Tracking - preserve existing if not provided
+      country: payload.country || existing?.country,
+      city: payload.city || existing?.city,
+      regionName: payload.regionName || existing?.regionName,
+      ip: payload.ip || existing?.ip,
+      // Tab Tracking
       total_tab_quantity: payload.total_tab_quantity !== undefined ? payload.total_tab_quantity : existing?.total_tab_quantity,
-      total_backgroundTab_quantity: payload.total_backgroundTab_quantity !== undefined ? payload.total_backgroundTab_quantity : existing?.total_backgroundTab_quantity,
       // Session Mode - preserve existing if not provided, default to 'active'
       session_mode: sessionMode,
       // Timestamps
       createdAt: existing?.createdAt || formatTimestamp(now),
       updatedAt: formatTimestamp(now),
-      lastActivity: 'just now',
     };
 
     // 🆕 B2: JOIN update-only mode → do not recreate; keep TTL
@@ -146,10 +148,12 @@ export class PresenceService {
     // Log with timestamp
     const sessionTime = formatTimestamp(now);
     const desktopModeWarning = presenceData.desktop_mode ? ' 🚨 DESKTOP MODE ACTIVE' : '';
-    const tabInfo = presenceData.total_tab_quantity ? ` | Tabs: ${presenceData.total_tab_quantity} (${presenceData.total_backgroundTab_quantity} bg)` : '';
+    const tabInfo = presenceData.total_tab_quantity ? ` | Tabs: ${presenceData.total_tab_quantity}` : '';
     const sessionModeInfo = presenceData.session_mode ? ` | Mode: ${presenceData.session_mode}` : '';
     const platformInfo = ` | Platform: ${platform} (${presenceData.platform}/${presenceData.browser}/${presenceData.device})`;
-    console.log(`[Presence] ✅ JOIN | ${payload.sessionId.substring(0, 8)} | ${sessionTime}${desktopModeWarning}${tabInfo}${sessionModeInfo}${platformInfo}`);
+    const regionInfo = presenceData.regionName ? ` | Region: ${presenceData.regionName}` : '';
+    const countryInfo = presenceData.country ? ` | Country: ${presenceData.country}` : '';
+    console.log(`[Presence] ✅ JOIN | ${payload.sessionId.substring(0, 8)} | ${sessionTime}${desktopModeWarning}${tabInfo}${sessionModeInfo}${platformInfo}${regionInfo}${countryInfo}`);
   }
   /**
    * Handle heartbeat (beat)
@@ -167,7 +171,6 @@ export class PresenceService {
         ...existing,
         tabId: payload.tabId,
         updatedAt: formatTimestamp(now),
-        lastActivity: getRelativeTime(now),
       };
       
       await this.redis.updatePresence(updatedData);
@@ -186,7 +189,6 @@ export class PresenceService {
         isLeader: true,
         createdAt: formatTimestamp(now),
         updatedAt: formatTimestamp(now),
-        lastActivity: 'just now',
         session_mode: sessionMode,
       };
       

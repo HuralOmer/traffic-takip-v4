@@ -33,8 +33,11 @@ export interface JoinPayload {
   userAgent?: string | undefined;
   desktop_mode?: boolean | undefined;
   total_tab_quantity?: number | undefined;
-  total_backgroundTab_quantity?: number | undefined;
   session_mode?: 'active' | 'passive_active' | undefined;
+  country?: string | undefined;
+  city?: string | undefined;
+  regionName?: string | undefined;
+  ip?: string | undefined;
 }
 export interface BeatPayload {
   customerId: string;

@@ -3,7 +3,7 @@
  * Handles all Redis operations for active users
  */
 import type { PresenceData } from '../../types/index.js';
-import { formatTimestamp, getRelativeTime } from '../utils/timestamp.js';
+import { formatTimestamp } from '../utils/timestamp.js';
 export class RedisAdapter {
   private redis: any; // Redis client instance
   private ttl: number;
@@ -24,7 +24,6 @@ export class RedisAdapter {
     const updatedData = {
       ...data,
       updatedAt: formatTimestamp(now),
-      lastActivity: getRelativeTime(now), // "just now"
     };
     const value = JSON.stringify(updatedData);
     // Calculate TTL based on session_mode
@@ -67,7 +66,6 @@ export class RedisAdapter {
       ...data,
       createdAt, // Keep original creation time
       updatedAt: formatTimestamp(now),
-      lastActivity: getRelativeTime(now), // Will show "X seconds/minutes ago"
     };
     const value = JSON.stringify(updatedData);
     

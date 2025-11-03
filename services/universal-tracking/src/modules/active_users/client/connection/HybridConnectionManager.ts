@@ -331,7 +331,6 @@ export class HybridConnectionManager {
     userAgent?: string,
     desktop_mode?: boolean,
     total_tab_quantity?: number,
-    total_backgroundTab_quantity?: number,
     session_mode?: SessionMode
   ): Promise<void> {
     // 🆕 Cache device info for TTL refresh
@@ -372,7 +371,6 @@ export class HybridConnectionManager {
       userAgent,
       desktop_mode,
       total_tab_quantity,
-      total_backgroundTab_quantity,
       ...(session_mode && session_mode !== 'removed' && { session_mode }),
     };
     await this.httpClient.join(payload);

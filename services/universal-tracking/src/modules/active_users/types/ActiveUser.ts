@@ -22,15 +22,17 @@ export interface PresenceData {
   browser?: string | undefined;
   device?: string | undefined;
   desktop_mode?: boolean | undefined;
+  country?: string | undefined;
+  city?: string | undefined;
+  regionName?: string | undefined;
+  ip?: string | undefined;
   // Tab Tracking
   total_tab_quantity?: number | undefined;
-  total_backgroundTab_quantity?: number | undefined;
   // Session Mode
   session_mode?: 'active' | 'passive_active' | undefined;
   // Timestamps (Hybrid Format - Human Readable)
   createdAt: string;
   updatedAt: string;
-  lastActivity: string;
 }
 export interface ActiveUserMetrics {
   customerId: string;

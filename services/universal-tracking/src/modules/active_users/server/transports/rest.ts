@@ -3,6 +3,8 @@
  * Handles HTTP requests for presence management
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import geoip from 'geoip-lite';
+import ISO3166 from 'iso-3166-2';
 import { PresenceService } from '../services/presence.service.js';
 import { EMAService } from '../services/ema.service.js';
 import { MultiTierRateLimiter } from '../utils/rate-limit.js';
@@ -43,6 +45,22 @@ export function setupRESTEndpoints(
   emaService: EMAService,
   rateLimiter: MultiTierRateLimiter
 ): void {
+  function extractClientIp(request: FastifyRequest): string {
+    const xForwardedFor = request.headers['x-forwarded-for'];
+    let ip: string | undefined;
+    if (typeof xForwardedFor === 'string' && xForwardedFor.length > 0) {
+      ip = xForwardedFor.split(',')[0]?.trim();
+    } else if (Array.isArray(xForwardedFor) && xForwardedFor.length > 0) {
+      ip = xForwardedFor[0]?.split(',')[0]?.trim();
+    }
+    if (!ip || ip.length === 0) {
+      ip = request.ip;
+    }
+    if (!ip) {
+      return '0.0.0.0';
+    }
+    return ip.includes('::ffff:') ? ip.replace('::ffff:', '') : ip;
+  }
   /**
    * POST /presence/join
    * User joins (new session)
@@ -86,9 +104,26 @@ export function setupRESTEndpoints(
         // Browser'a Client Hints göndermesini söyle
         reply.header('Accept-CH', 'Sec-CH-UA, Sec-CH-UA-Platform, Sec-CH-UA-Model, Sec-CH-UA-Arch, Sec-CH-UA-Full-Version-List');
         reply.header('Permissions-Policy', 'ch-ua-model=(*), ch-ua-platform=(*), ch-ua-arch=(*), ch-ua-full-version-list=(*), ch-ua-platform-version=(*)');
-        
+
+        const clientIp = extractClientIp(request);
+        const geo = geoip.lookup(clientIp);
+        const countryCode = geo?.country ?? undefined;
+        const countryNameLookup = countryCode ? ISO3166.country(countryCode) : undefined;
+        const country = countryNameLookup?.name || payload.country || countryCode || 'Unknown';
+        const city = geo?.city ?? 'Unknown';
+        const regionCode = geo?.region || undefined;
+
+        let regionName: string | undefined;
+        if (regionCode && countryCode) {
+          const subdivisionKey = `${countryCode}-${regionCode}`;
+          const subdivision = ISO3166.subdivision(subdivisionKey);
+          regionName = subdivision?.name || regionCode;
+        } else if (regionCode) {
+          regionName = regionCode;
+        }
+
         // Payload'ı güncelle (server-side sessionId kullan)
-        const updatedPayload = { ...payload, sessionId };
+        const updatedPayload = { ...payload, sessionId, country, city, ip: clientIp, regionName };
         await presenceService.handleJoin(updatedPayload);
         return reply.code(200).send({ success: true });
       } catch (error) {

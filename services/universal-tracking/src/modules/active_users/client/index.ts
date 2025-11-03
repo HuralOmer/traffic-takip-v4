@@ -717,7 +717,6 @@ export class ActiveUsersClient {
     
     const tabCounts = this.tabLeader.getTabCounts();
     const total_tab_quantity = tabCounts.total;
-    const total_backgroundTab_quantity = tabCounts.background;
     
     this.session.refreshSession();
     try {
@@ -733,7 +732,6 @@ export class ActiveUsersClient {
         userAgent,
         desktop_mode,
         total_tab_quantity,
-        total_backgroundTab_quantity,
         sessionModeToSend
       );
     } finally {
